@@ -18,8 +18,8 @@
     .result{display:none;margin-top:20px}
     .cmd-box{background:#0a0a1a;border:1px solid #2a2a3a;border-radius:10px;padding:16px;margin-bottom:16px}
     .cmd-box h3{font-size:14px;color:#667eea;margin-bottom:10px}
-    .cmd-text{background:#000;border:1px solid #333;border-radius:8px;padding:12px;font-family:monospace;font-size:12px;color:#4ade80;word-break:break-all;cursor:pointer;line-height:1.5}
-    .cmd-text:hover{border-color:#667eea}
+    .cmd-text{background:#000;border:1px solid #333;border-radius:8px;padding:12px;font-family:monospace;font-size:11px;color:#4ade80;word-break:break-all;line-height:1.4;width:100%;min-height:80px;max-height:200px;resize:vertical}
+    .cmd-text:focus{border-color:#667eea;outline:none}
     .copy-btn{margin-top:8px;padding:8px 16px;background:#667eea;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:13px}
     .hint{font-size:11px;color:#666;margin-top:8px;line-height:1.6}
     .steps h2{font-size:18px;margin-bottom:16px}
@@ -45,7 +45,7 @@
       <div class="result" id="result">
         <div class="cmd-box">
           <h3>Команда для консоли</h3>
-          <div class="cmd-text" id="cmdText" title="Нажми чтобы скопировать"></div>
+          <textarea class="cmd-text" id="cmdText" readonly onclick="this.select()"></textarea>
           <button class="copy-btn" id="copyCmd">📋 Скопировать команду</button>
           <div class="hint">
             1. Открой страницу с видео/аудио<br>
@@ -79,7 +79,7 @@
         const scriptRes = await fetch('/api/script/' + data.roomId);
         const scriptData = await scriptRes.json();
 
-        document.getElementById('cmdText').textContent = scriptData.script;
+        document.getElementById('cmdText').value = scriptData.script;
         document.getElementById('result').style.display = 'block';
       } catch(e) {
         alert('Ошибка: ' + e.message);
@@ -87,7 +87,7 @@
     });
 
     document.getElementById('copyCmd').addEventListener('click', () => {
-      navigator.clipboard.writeText(document.getElementById('cmdText').textContent);
+      navigator.clipboard.writeText(document.getElementById('cmdText').value);
       document.getElementById('copyCmd').textContent = '✅ Скопировано!';
       setTimeout(() => document.getElementById('copyCmd').textContent = '📋 Скопировать команду', 2000);
     });
