@@ -87,9 +87,9 @@ var ICE_SERVERS=[
   {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}
 ];
 
-// Поиск медиа-элементов на странице (включая iframe)
-// Find media elements on page (including iframes)
-// Buscar elementos multimedia en la página (incluyendo iframes)
+// Поиск медиа-элементов на странице (включая same-origin iframe)
+// Find media elements on page (including same-origin iframes)
+// Buscar elementos multimedia en la página (incluyendo iframes same-origin)
 function findMedia(){
   var els=[].slice.call(document.querySelectorAll('video,audio'));
   document.querySelectorAll('iframe').forEach(function(f){
@@ -98,62 +98,78 @@ function findMedia(){
   return els;
 }
 
-// Захват медиа: captureStream + AudioContext (звук и хосту, и зрителю)
-// Media capture: captureStream + AudioContext (audio for both host and viewer)
-// Captura de medios: captureStream + AudioContext (audio para host y espectador)
-async function startCapture(){
+// Поиск cross-origin iframe с плеером (kinogo, seasonvar и т.д.)
+// Detect cross-origin iframes with video players
+// Detectar iframes cross-origin con reproductores de video
+function findPlayerIframes(){
+  var found=[];
+  document.querySelectorAll('iframe').forEach(function(f){
+    try{f.contentDocument;return}catch(e){}
+    var src=f.src||'';
+    if(!src||src==='about:blank') return;
+    var r=f.getBoundingClientRect();
+    if(r.width>200&&r.height>150) found.push({src:src,w:Math.round(r.width),h:Math.round(r.height)});
+  });
+  found.sort(function(a,b){return(b.w*b.h)-(a.w*a.h)});
+  return found;
+}
+
+// captureStream + AudioContext (звук и хосту, и зрителю)
+// captureStream + AudioContext (audio for both host and viewer)
+async function captureFromElement(){
   stream=new MediaStream();
-
   var els=findMedia();
-  if(els.length>0){
-    var el=els[0];
-    try{
-      // Видео из captureStream / Video from captureStream / Video desde captureStream
-      var ms=el.captureStream?el.captureStream():el.mozCaptureStream();
-      if(ms){
-        ms.getVideoTracks().forEach(function(t){stream.addTrack(t)});
-        console.log('[P2P] Video captured from '+el.tagName);
-      }
-      // Аудио через AudioContext — разделяем: колонки хоста + стрим зрителю
-      // Audio via AudioContext — split: host speakers + viewer stream
-      // Audio vía AudioContext — dividir: altavoces del host + stream al espectador
-      var ac=new (window.AudioContext||window.webkitAudioContext)();
-      var source=ac.createMediaElementSource(el);
-      source.connect(ac.destination);
-      var streamDest=ac.createMediaStreamDestination();
-      source.connect(streamDest);
-      streamDest.stream.getAudioTracks().forEach(function(t){stream.addTrack(t)});
-      console.log('[P2P] Audio: speakers + stream, tracks:',stream.getTracks().map(function(t){return t.kind}).join(', '));
-
-      // Заглушка видео для audio-only элементов
-      // Video placeholder for audio-only elements
-      // Placeholder de video para elementos solo-audio
-      if(!stream.getVideoTracks().length){
-        var c=document.createElement('canvas');c.width=640;c.height=360;
-        var ctx=c.getContext('2d');ctx.fillStyle='#111';ctx.fillRect(0,0,640,360);
-        ctx.fillStyle='#888';ctx.font='24px sans-serif';ctx.textAlign='center';
-        ctx.fillText('Audio only',320,180);
-        var vs=c.captureStream(1);
-        vs.getVideoTracks().forEach(function(t){stream.addTrack(t)});
-      }
-    }catch(e){console.log('[P2P] captureStream failed:',e.message);stream=null}
-  }
-
-  // Fallback: getDisplayMedia (Chrome tab sharing)
-  if(!stream||!stream.getTracks().length){
-    try{
-      stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
-      var tracks=stream.getTracks().map(function(t){return t.kind+':'+t.readyState});
-      console.log('[P2P] getDisplayMedia tracks:',tracks.join(', '));
-      if(!tracks.some(function(t){return t.indexOf('audio')===0})) console.warn('[P2P] No audio! In Chrome enable "Share tab audio"');
-    }catch(e){
-      console.error('[P2P] Capture failed:',e.message);
-      window.__p2p=false;
-      return;
+  if(!els.length) return false;
+  var el=els[0];
+  try{
+    var ms=el.captureStream?el.captureStream():el.mozCaptureStream();
+    if(ms) ms.getVideoTracks().forEach(function(t){stream.addTrack(t)});
+    var ac=new (window.AudioContext||window.webkitAudioContext)();
+    var source=ac.createMediaElementSource(el);
+    source.connect(ac.destination);
+    var streamDest=ac.createMediaStreamDestination();
+    source.connect(streamDest);
+    streamDest.stream.getAudioTracks().forEach(function(t){stream.addTrack(t)});
+    console.log('[P2P] captureStream OK, tracks:',stream.getTracks().map(function(t){return t.kind}).join(', '));
+    if(!stream.getVideoTracks().length){
+      var c=document.createElement('canvas');c.width=640;c.height=360;
+      var ctx=c.getContext('2d');ctx.fillStyle='#111';ctx.fillRect(0,0,640,360);
+      ctx.fillStyle='#888';ctx.font='24px sans-serif';ctx.textAlign='center';
+      ctx.fillText('Audio only',320,180);
+      var vs=c.captureStream(1);
+      vs.getVideoTracks().forEach(function(t){stream.addTrack(t)});
     }
+    return true;
+  }catch(e){console.log('[P2P] captureStream failed:',e.message);stream=null;return false}
+}
+
+// getDisplayMedia fallback
+async function captureScreen(){
+  try{
+    stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});
+    console.log('[P2P] getDisplayMedia tracks:',stream.getTracks().map(function(t){return t.kind}).join(', '));
+    return true;
+  }catch(e){
+    console.error('[P2P] getDisplayMedia failed:',e.message);
+    return false;
   }
-  var btn=document.getElementById('p2p-start-btn');
-  if(btn) btn.remove();
+}
+
+async function startCapture(mode){
+  var ok=false;
+  if(mode==='element') ok=await captureFromElement();
+  else if(mode==='screen') ok=await captureScreen();
+  else{
+    ok=await captureFromElement();
+    if(!ok) ok=await captureScreen();
+  }
+  if(!ok||!stream||!stream.getTracks().length){
+    window.__p2p=false;
+    console.error('[P2P] No stream captured');
+    return;
+  }
+  var p=document.getElementById('p2p-panel-start');
+  if(p) p.remove();
 
   // WebSocket сигналинг / WebSocket signaling / Señalización WebSocket
   ws=new WebSocket(WS_URL+'/ws?room='+ROOM+'&name=Host&role=host');
@@ -184,20 +200,54 @@ async function startCapture(){
   };
 }
 
-// Кнопка старта (нужен клик пользователя для getDisplayMedia)
-// Start button (user click required for getDisplayMedia)
-// Botón de inicio (se requiere clic del usuario para getDisplayMedia)
-function showStartBtn(){
-  var b=document.createElement('button');
-  b.id='p2p-start-btn';
-  b.textContent='\\u25B6 Start P2P Stream';
-  b.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:999999;padding:18px 36px;font-size:18px;font-weight:700;color:#fff;background:linear-gradient(135deg,#667eea,#764ba2);border:none;border-radius:14px;cursor:pointer;box-shadow:0 6px 25px rgba(102,126,234,.5);font-family:sans-serif';
-  b.onclick=startCapture;
-  document.body.appendChild(b);
-  console.log('[P2P] Click the button on the page to start streaming');
+// Панель выбора режима захвата
+// Capture mode selection panel
+// Panel de selección de modo de captura
+function showStartPanel(){
+  var els=findMedia();
+  var iframes=findPlayerIframes();
+  var d=document.createElement('div');
+  d.id='p2p-panel-start';
+  var s='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:999999;background:#14141f;border:1px solid #333;border-radius:14px;padding:20px;font-family:sans-serif;color:#ccc;box-shadow:0 6px 30px rgba(0,0,0,.7);width:340px;max-width:90vw;font-size:14px';
+  var html='<div style="'+s+'">';
+  html+='<div style="font-size:18px;font-weight:700;color:#fff;margin-bottom:14px;text-align:center">P2P Stream</div>';
+
+  // Кнопка 1: captureStream (если есть медиа на странице)
+  if(els.length>0){
+    html+='<button id="p2p-btn-element" style="width:100%;padding:12px;margin-bottom:8px;background:linear-gradient(135deg,#667eea,#764ba2);border:none;border-radius:10px;color:#fff;font-size:15px;font-weight:600;cursor:pointer">\\u25B6 Захватить плеер</button>';
+    html+='<div style="font-size:11px;color:#888;margin-bottom:12px;text-align:center">YouTube, прямые видео — видео + звук</div>';
+  }
+
+  // Кнопка 2: getDisplayMedia (всегда доступна)
+  html+='<button id="p2p-btn-screen" style="width:100%;padding:12px;margin-bottom:8px;background:#333;border:1px solid #555;border-radius:10px;color:#fff;font-size:15px;font-weight:600;cursor:pointer">\\uD83D\\uDCBB Поделиться вкладкой</button>';
+  html+='<div style="font-size:11px;color:#888;margin-bottom:12px;text-align:center">Любой сайт — видео (звук только в Chrome)</div>';
+
+  // Подсказка: iframe с плеером найден
+  if(iframes.length>0&&els.length===0){
+    html+='<div style="background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:10px;margin-top:8px">';
+    html+='<div style="font-size:12px;color:#facc15;margin-bottom:6px">\\u26A0 Видео внутри iframe!</div>';
+    html+='<div style="font-size:11px;color:#aaa;margin-bottom:8px">Открой плеер в новой вкладке, потом вставь команду там:</div>';
+    iframes.forEach(function(f,i){
+      html+='<div style="background:#000;border:1px solid #333;border-radius:6px;padding:6px 8px;margin-bottom:4px;font-family:monospace;font-size:10px;color:#4ade80;word-break:break-all;cursor:pointer" onclick="navigator.clipboard.writeText(this.textContent)" title="Click to copy">'+f.src.replace(/</g,'&lt;')+'</div>';
+    });
+    html+='<div style="font-size:10px;color:#666;margin-top:4px">ПКМ на плеер \\u2192 "Открыть фрейм в новой вкладке" или скопируй ссылку выше</div>';
+    html+='</div>';
+  }
+
+  html+='<button id="p2p-btn-close" style="width:100%;padding:8px;margin-top:10px;background:none;border:1px solid #333;border-radius:8px;color:#666;font-size:12px;cursor:pointer">\\u2715 Закрыть</button>';
+  html+='</div>';
+  d.innerHTML=html;
+  document.body.appendChild(d);
+
+  if(document.getElementById('p2p-btn-element'))
+    document.getElementById('p2p-btn-element').onclick=function(){startCapture('element')};
+  document.getElementById('p2p-btn-screen').onclick=function(){startCapture('screen')};
+  document.getElementById('p2p-btn-close').onclick=function(){d.remove();window.__p2p=false};
+
+  console.log('[P2P] Found: '+els.length+' media elements, '+iframes.length+' player iframes');
 }
 
-showStartBtn();
+showStartPanel();
 
 // Создать WebRTC соединение для нового зрителя
 // Create WebRTC connection for new viewer
