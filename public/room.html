@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Player2PiP — Просмотр</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#000;color:#e0e0e0;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+    .topbar{display:flex;align-items:center;gap:10px;padding:6px 14px;background:#111;border-bottom:1px solid #222;z-index:100;flex-shrink:0;height:36px}
+    .topbar-logo{font-weight:700;font-size:14px;background:linear-gradient(135deg,#667eea,#764ba2);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-decoration:none}
+    .topbar-info{font-size:12px;color:#888;flex:1}
+    .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px;vertical-align:middle}
+    .video-wrap{flex:1;display:flex;align-items:center;justify-content:center;background:#000;position:relative;min-height:0}
+    #remoteVideo{width:100%;height:100%;object-fit:contain;display:block}
+    .waiting{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#555;font-size:16px;gap:12px}
+    .spinner{width:30px;height:30px;border:3px solid #333;border-top-color:#667eea;border-radius:50%;animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .controls{display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;background:#111;border-top:1px solid #222;flex-shrink:0;z-index:10}
+    .ctrl-btn{padding:8px 18px;background:#222;border:1px solid #333;border-radius:8px;color:#ddd;cursor:pointer;font-size:16px;display:flex;align-items:center;gap:6px;user-select:none}
+    .ctrl-btn:hover{background:#333}
+    .ctrl-btn.active{background:#667eea;border-color:#667eea;color:#fff}
+    .ctrl-btn.unmute-btn{background:#e74c3c;border-color:#e74c3c;color:#fff;animation:pulse 1.5s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
+    .seek-bar{display:flex;align-items:center;gap:6px}
+    .seek-bar button{padding:6px 12px;background:#222;border:1px solid #333;border-radius:6px;color:#aaa;cursor:pointer;font-size:13px}
+    .seek-bar button:hover{background:#333}
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.88);display:flex;align-items:center;justify-content:center;z-index:5000}
+    .modal-box{background:#14141f;border:1px solid #2a2a3a;border-radius:12px;padding:24px;width:340px;max-width:90%}
+    .modal-box h2{margin-bottom:14px;font-size:18px}
+    .modal-box label{display:block;font-size:12px;color:#888;margin-bottom:5px}
+    .modal-box input{width:100%;padding:10px 12px;background:#1a1a2e;border:1px solid #2a2a3a;border-radius:7px;color:#fff;font-size:14px;outline:none;margin-bottom:14px}
+    .modal-box input:focus{border-color:#667eea}
+    .modal-box button{width:100%;padding:11px;background:linear-gradient(135deg,#667eea,#764ba2);border:none;border-radius:7px;color:#fff;font-size:14px;font-weight:600;cursor:pointer}
+  </style>
+</head>
+<body>
+
+  <div class="modal-bg" id="joinModal">
+    <div class="modal-box">
+      <h2>Войти в трансляцию</h2>
+      <label>Ваше имя</label>
+      <input type="text" id="nameInput" placeholder="Как вас зовут?" maxlength="20" autofocus>
+      <button id="joinBtn">Смотреть</button>
+    </div>
+  </div>
+
+  <div class="topbar">
+    <a href="/" class="topbar-logo">P2P</a>
+    <div class="topbar-info">
+      <span class="dot" id="dot" style="background:#666"></span>
+      <span id="statusText">Подключение...</span>
+    </div>
+  </div>
+
+  <div class="video-wrap">
+    <div class="waiting" id="waiting">
+      <div class="spinner"></div>
+      <span id="waitText">Ожидание трансляции...</span>
+    </div>
+    <video id="remoteVideo" autoplay playsinline muted></video>
+  </div>
+
+  <div class="controls">
+    <button class="ctrl-btn unmute-btn" id="unmuteBtn" title="Включить звук">🔇 Включить звук</button>
+    <button class="ctrl-btn" id="playBtn" title="Play">▶ Play</button>
+    <button class="ctrl-btn" id="pauseBtn" title="Пауза">⏸ Пауза</button>
+    <div class="seek-bar">
+      <button id="seekBack" title="-10 сек">⏪ 10с</button>
+      <button id="seekFwd" title="+10 сек">10с ⏩</button>
+    </div>
+  </div>
+
+  <script>
+    var roomId = location.pathname.split('/room/')[1];
+    var ws, pc, userName;
+
+    document.getElementById('nameInput').value = localStorage.getItem('p2p_name') || '';
+    document.getElementById('joinBtn').onclick = join;
+    document.getElementById('nameInput').onkeypress = function(e){ if(e.key==='Enter') join(); };
+
+    // Кнопка включения звука (видео muted для autoplay, звук включается по клику)
+    document.getElementById('unmuteBtn').onclick = function(){
+      var video = document.getElementById('remoteVideo');
+      video.muted = !video.muted;
+      var btn = document.getElementById('unmuteBtn');
+      if(video.muted){
+        btn.textContent = '🔇 Включить звук';
+        btn.className = 'ctrl-btn unmute-btn';
+      } else {
+        btn.textContent = '🔊 Звук вкл';
+        btn.className = 'ctrl-btn active';
+      }
+    };
+
+    // Кнопки управления плеером хоста
+    document.getElementById('playBtn').onclick = function(){ sendControl('play'); };
+    document.getElementById('pauseBtn').onclick = function(){ sendControl('pause'); };
+    document.getElementById('seekBack').onclick = function(){ sendControl('seek-rel', -10); };
+    document.getElementById('seekFwd').onclick = function(){ sendControl('seek-rel', 10); };
+
+    function sendControl(action, value) {
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'control', action: action, value: value }));
+      }
+    }
+
+    async function join() {
+      userName = document.getElementById('nameInput').value.trim() || 'Аноним';
+      localStorage.setItem('p2p_name', userName);
+      document.getElementById('joinModal').style.display = 'none';
+
+      var res = await fetch('/api/rooms/' + roomId);
+      if (!res.ok) { alert('Комната не найдена'); location.href = '/'; return; }
+
+      connect();
+    }
+
+    function connect() {
+      var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(proto + '//' + location.host + '/ws?room=' + roomId + '&name=' + encodeURIComponent(userName) + '&role=viewer');
+
+      ws.onopen = function() {
+        document.getElementById('dot').style.background = '#facc15';
+        document.getElementById('statusText').textContent = 'Подключён, ожидание стрима...';
+      };
+
+      ws.onmessage = function(e) {
+        var msg = JSON.parse(e.data);
+        if (msg.type === 'offer') handleOffer(msg);
+        if (msg.type === 'ice-candidate' && msg.from && pc && msg.candidate) {
+          pc.addIceCandidate(new RTCIceCandidate({candidate:msg.candidate,sdpMid:msg.sdpMid,sdpMLineIndex:msg.sdpMLineIndex})).catch(function(){});
+        }
+        if (msg.type === 'host-left') {
+          document.getElementById('dot').style.background = '#ef4444';
+          document.getElementById('statusText').textContent = 'Хост отключился';
+          document.getElementById('waiting').style.display = 'flex';
+          document.getElementById('waitText').textContent = 'Хост отключился. Ожидание...';
+        }
+        if (msg.type === 'users') {
+          var host = msg.users.find(function(u){return u.role==='host'});
+          document.getElementById('statusText').textContent = host ? 'Трансляция от ' + host.name : 'Ожидание хоста...';
+        }
+      };
+
+      ws.onclose = function() {
+        document.getElementById('dot').style.background = '#ef4444';
+        document.getElementById('statusText').textContent = 'Переподключение...';
+        setTimeout(connect, 3000);
+      };
+    }
+
+    async function handleOffer(msg) {
+      if (pc) { pc.close(); pc = null; }
+      pc = new RTCPeerConnection({ iceServers: [
+        {urls:'stun:stun.l.google.com:19302'},
+        {urls:'stun:stun1.l.google.com:19302'},
+        {urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},
+        {urls:'turn:openrelay.metered.ca:443',username:'openrelayproject',credential:'openrelayproject'},
+        {urls:'turn:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}
+      ] });
+
+      pc.onicecandidate = function(e) {
+        if (e.candidate) ws.send(JSON.stringify({type:'ice-candidate',target:msg.from,candidate:e.candidate.candidate,sdpMid:e.candidate.sdpMid,sdpMLineIndex:e.candidate.sdpMLineIndex}));
+      };
+
+      pc.ontrack = function(e) {
+        var video = document.getElementById('remoteVideo');
+        video.srcObject = e.streams[0];
+        video.play().catch(function(){});
+        document.getElementById('waiting').style.display = 'none';
+        document.getElementById('dot').style.background = '#4ade80';
+        document.getElementById('statusText').textContent = 'Трансляция идёт';
+      };
+
+      await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: msg.sdp }));
+      var answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      ws.send(JSON.stringify({ type: 'answer', target: msg.from, sdp: pc.localDescription.sdp }));
+    }
+  </script>
+</body>
+</html>

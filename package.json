@@ -1,0 +1,14 @@
+{
+  "name": "player2pip",
+  "version": "2.0.0",
+  "description": "Sync video/audio playback for two people via bookmarklet",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "uuid": "^9.0.0",
+    "ws": "^8.16.0"
+  }
+}

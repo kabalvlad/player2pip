@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Player2PiP — Смотри вместе</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0a0f;color:#e0e0e0;min-height:100vh}
+    .container{max-width:600px;margin:0 auto;padding:50px 20px}
+    .logo{text-align:center;margin-bottom:40px}
+    .logo h1{font-size:40px;background:linear-gradient(135deg,#667eea,#764ba2);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .logo p{color:#666;margin-top:8px;font-size:15px}
+    .card{background:#14141f;border:1px solid #2a2a3a;border-radius:16px;padding:28px;margin-bottom:20px}
+    .card h2{font-size:18px;margin-bottom:16px}
+    .btn{width:100%;padding:14px;border:none;border-radius:10px;color:#fff;font-size:16px;font-weight:600;cursor:pointer;background:linear-gradient(135deg,#667eea,#764ba2)}
+    .btn:hover{opacity:0.9}
+    .result{display:none;margin-top:20px}
+    .cmd-box{background:#0a0a1a;border:1px solid #2a2a3a;border-radius:10px;padding:16px;margin-bottom:16px}
+    .cmd-box h3{font-size:14px;color:#667eea;margin-bottom:10px}
+    .cmd-text{background:#000;border:1px solid #333;border-radius:8px;padding:12px;font-family:monospace;font-size:12px;color:#4ade80;word-break:break-all;cursor:pointer;line-height:1.5}
+    .cmd-text:hover{border-color:#667eea}
+    .copy-btn{margin-top:8px;padding:8px 16px;background:#667eea;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:13px}
+    .hint{font-size:11px;color:#666;margin-top:8px;line-height:1.6}
+    .steps h2{font-size:18px;margin-bottom:16px}
+    .step{display:flex;gap:14px;padding:10px 0;border-bottom:1px solid #1a1a2e}
+    .step:last-child{border:none}
+    .step-num{width:28px;height:28px;background:linear-gradient(135deg,#667eea,#764ba2);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0}
+    .step-text{font-size:14px;line-height:1.5}
+    .step-text strong{color:#fff}
+    .step-text code{background:#1a1a2e;padding:2px 6px;border-radius:4px;font-size:12px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">
+      <h1>Player2PiP</h1>
+      <p>Смотри видео и слушай аудио вместе</p>
+    </div>
+
+    <div class="card">
+      <h2>Создать комнату</h2>
+      <button class="btn" id="createBtn">Создать комнату</button>
+
+      <div class="result" id="result">
+        <div class="cmd-box">
+          <h3>Команда для консоли</h3>
+          <div class="cmd-text" id="cmdText" title="Нажми чтобы скопировать"></div>
+          <button class="copy-btn" id="copyCmd">📋 Скопировать команду</button>
+          <div class="hint">
+            1. Открой страницу с видео/аудио<br>
+            2. Нажми <code>F12</code> → вкладка <code>Console</code> (Консоль)<br>
+            3. Вставь команду → нажми <code>Enter</code><br>
+            4. Появится ссылка для зрителя — отправь преподу
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card steps">
+      <h2>Как это работает</h2>
+      <div class="step"><div class="step-num">1</div><div class="step-text"><strong>Создай комнату</strong> — получи команду</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-text"><strong>Открой страницу</strong> с видео/аудио (Skyeng, YouTube и т.д.)</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-text"><strong>Нажми F12</strong> → Console → вставь команду → Enter</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-text"><strong>Отправь ссылку</strong> преподу — он увидит и услышит всё, и сможет управлять плеером</div></div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('createBtn').addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/rooms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        const data = await res.json();
+        // Fetch the full inline script so user can paste it directly (no eval needed)
+        const scriptRes = await fetch('/api/script/' + data.roomId);
+        const scriptData = await scriptRes.json();
+
+        document.getElementById('cmdText').textContent = scriptData.script;
+        document.getElementById('result').style.display = 'block';
+      } catch(e) {
+        alert('Ошибка: ' + e.message);
+      }
+    });
+
+    document.getElementById('copyCmd').addEventListener('click', () => {
+      navigator.clipboard.writeText(document.getElementById('cmdText').textContent);
+      document.getElementById('copyCmd').textContent = '✅ Скопировано!';
+      setTimeout(() => document.getElementById('copyCmd').textContent = '📋 Скопировать команду', 2000);
+    });
+  </script>
+</body>
+</html>
