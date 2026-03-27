@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { width: 300px; padding: 16px; font-family: system-ui, sans-serif; background: #1a1a1a; color: #eee; }
+    h2 { margin: 0 0 12px; font-size: 16px; }
+    button { width: 100%; padding: 10px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; }
+    #btn-start { background: #2563eb; color: #fff; }
+    #btn-start:hover { background: #1d4ed8; }
+    #btn-stop { background: #dc2626; color: #fff; display: none; }
+    #btn-stop:hover { background: #b91c1c; }
+    #link-box { margin-top: 12px; display: none; }
+    #link-box input { width: 100%; padding: 8px; border: 1px solid #444; border-radius: 4px; background: #222; color: #eee; font-size: 13px; }
+    #btn-copy { margin-top: 8px; background: #333; color: #eee; }
+    #btn-copy:hover { background: #444; }
+    #status { margin-top: 8px; font-size: 12px; color: #888; }
+  </style>
+</head>
+<body>
+  <h2>player2pip</h2>
+  <button id="btn-start">Начать трансляцию</button>
+  <button id="btn-stop">Остановить</button>
+  <div id="link-box">
+    <input id="link-input" readonly>
+    <button id="btn-copy">Копировать ссылку</button>
+  </div>
+  <div id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
